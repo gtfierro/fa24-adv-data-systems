@@ -19,21 +19,22 @@ class Relation:
     def scan(self):
         """Scans the relation and returns a generator of TIDs."""
         for i in tqdm(range(self.N)):
-            page_num = i >> 22
+            page_num = i >> 16
+            offset = i & 0xFFFF
             relation_file = os.path.join(self.relation_dir, f"{page_num}.dat")
             with open(relation_file, 'rb') as rf:
-                rf.seek(i * 4)
+                rf.seek(offset * 4)
                 tid = struct.unpack('I', rf.read(4))[0]
                 yield tid
 
     @profile
     def get_tuple(self, tid: int) -> Tuple[int]:
         """Returns the tuple data for the provided TID."""
-        page_num = tid >> 22
-        offset = tid & 0x3FFFFF
+        page_num = tid >> 16
+        offset = tid & 0xFFFF
         tuple_file = os.path.join(self.tuple_dir, f"{page_num}.dat")
         with open(tuple_file, 'rb') as tf:
-            tf.seek(offset * 4)
+            tf.seek(offset * 12)  # Read 12 bytes for 3 integers (each 4 bytes)
             tuple_data = struct.unpack('III', tf.read(12))
         return tuple_data
 
@@ -66,25 +67,24 @@ class Relation:
         return offset
 
     def save_tuple(self, idx: int, tuple_data: List[int]) -> int:
-        """Saves the tuple data to the tuple file. Returns TID"""
-        page_num = idx >> 22
-        offset = idx & 0x3FFFFF
+        """Saves the tuple data to the tuple file. Returns TID."""
+        page_num = idx >> 16
         tuple_file = os.path.join(self.tuple_dir, f"{page_num}.dat")
         with open(tuple_file, 'ab') as tf:
-            offset = os.path.getsize(tuple_file) // 4
-            tf.seek(offset * 4)
+            tf.seek(0, os.SEEK_END)  # Move to the end of the file
+            current_offset = os.path.getsize(tuple_file) // 12  # Each tuple has 3 integers (12 bytes)
             tf.write(struct.pack('III', *tuple_data))
-        return page_num << 22 | offset
+        return (page_num << 16) | current_offset  # TID is page_num + offset in the last 16 bits
 
     def generate(self) -> None:
         """Generates N tuples of random data for the provided schema."""
-        os.makedirs("xrd/relations", exist_ok=True)
-        os.makedirs("xrd/tuples", exist_ok=True)
-        os.makedirs("xrd/fields", exist_ok=True)
-        for i in tqdm(range(self.N)):
-            page_num = i >> 22  # 10 bits for page number
+        os.makedirs(self.relation_dir, exist_ok=True)
+        os.makedirs(self.tuple_dir, exist_ok=True)
+        os.makedirs(self.field_dir, exist_ok=True)
 
-            # generate the data for this tuple
+        total_tuples = min(self.N, 2 ** 32)  # Ensure we do not exceed 32-bit TID
+        for i in tqdm(range(total_tuples)):
+            # Generate the data for this tuple
             tuple_data = []
             for field in self.schema:
                 if field == 'employee_id':
@@ -98,11 +98,10 @@ class Relation:
 
             tid = self.save_tuple(i, tuple_data)
 
-            # save the tid to the list of tids for the relation
-            relation_file = os.path.join("xrd/relations", f"{page_num}.dat")
+            # Save the tid to the list of tids for the relation
+            relation_file = os.path.join(self.relation_dir, f"{tid >> 16}.dat")
             with open(relation_file, 'ab') as rf:
                 rf.write(struct.pack('I', tid))
-
 
 @profile
 def find_with_value(relation: Relation, field_name: str, value: int) -> Generator[int, None, None]:
@@ -111,7 +110,6 @@ def find_with_value(relation: Relation, field_name: str, value: int) -> Generato
         values = relation.get_tuple_values(tid)
         if values[relation.schema.index(field_name)] == value:
             yield tid
-
 
 def main():
     parser = argparse.ArgumentParser(description="Manage Relations")
@@ -137,7 +135,6 @@ def main():
     elif args.command == 'bench':
         relation = Relation(name, schema, args.N)
         print(len(list(find_with_value(relation, 'age', 30))))
-
 
 if __name__ == '__main__':
     main()
