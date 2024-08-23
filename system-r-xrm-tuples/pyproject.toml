@@ -1,0 +1,7 @@
+[tool.uv]
+dev-dependencies = [
+    "gprof2dot>=2024.6.6",
+    "line-profiler>=4.1.3",
+]
+[tool.uv.workspace]
+members = []
