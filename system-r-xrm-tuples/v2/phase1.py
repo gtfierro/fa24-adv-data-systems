@@ -10,16 +10,15 @@ class Relation:
     def __init__(self, name: str, schema: List[str], N: int = 100000):
         self.name = name
         self.schema = schema
-        self.relation_dir = "xrd/relations"
-        self.tuple_dir = "xrd/tuples"
-        self.field_dir = "xrd/fields"
+        self.relation_dir = "phase1/relations"
+        self.tuple_dir = "phase1/tuples"
         self.N = N
 
     @profile
     def scan(self):
         """Scans the relation and returns a generator of TIDs."""
         for i in tqdm(range(self.N)):
-            page_num = i >> 22
+            page_num = i >> 30
             relation_file = os.path.join(self.relation_dir, f"{page_num}.dat")
             with open(relation_file, 'rb') as rf:
                 rf.seek(i * 4)
@@ -29,60 +28,35 @@ class Relation:
     @profile
     def get_tuple(self, tid: int) -> Tuple[int]:
         """Returns the tuple data for the provided TID."""
-        page_num = tid >> 22
-        offset = tid & 0x3FFFFF
+        page_num = tid >> 30
+        offset = tid & 0x3FFFFFFF
         tuple_file = os.path.join(self.tuple_dir, f"{page_num}.dat")
         with open(tuple_file, 'rb') as tf:
-            tf.seek(offset * 4)
-            tuple_data = struct.unpack('III', tf.read(12))
+            tf.seek(offset * (4 * len(self.schema)))  # Assume each int is 4 bytes
+            tuple_data = struct.unpack('I' * len(self.schema), tf.read(4 * len(self.schema)))
         return tuple_data
-
-    @profile
-    def get_field_value(self, field_name: str, offset: int) -> int:
-        """Returns the field value at the provided offset."""
-        field_file = os.path.join(self.field_dir, f"{field_name}.dat")
-        with open(field_file, 'rb') as ff:
-            ff.seek(offset * 4)
-            value = struct.unpack('I', ff.read(4))[0]
-        return value
 
     @profile
     def get_tuple_values(self, tid: int) -> List[int]:
         """Returns a list of field values for the provided TID."""
-        tuple_data = self.get_tuple(tid)
-        return [self.get_field_value(field, offset) for field, offset in zip(self.schema, tuple_data)]
-
-    def save_field_value(self, field_name: str, value: int) -> int:
-        """Saves the field value in a separate file."""
-        # Discussion point:
-        # - if multiple rows have the same value, we can save the value only once
-        # - however, this means that we would need to clean up the field file after deleting a tuple
-        # - this would require us to scan the entire tuple file to see if the value is still in use
-        # - this is a trade-off between space and time
-        field_file = os.path.join(self.field_dir, f"{field_name}.dat")
-        with open(field_file, 'ab') as ff:
-            offset = os.path.getsize(field_file) // 4
-            ff.write(struct.pack('I', value))
-        return offset
+        return list(self.get_tuple(tid))
 
     def save_tuple(self, idx: int, tuple_data: List[int]) -> int:
         """Saves the tuple data to the tuple file. Returns TID"""
-        page_num = idx >> 22
-        offset = idx & 0x3FFFFF
+        page_num = idx >> 30
         tuple_file = os.path.join(self.tuple_dir, f"{page_num}.dat")
         with open(tuple_file, 'ab') as tf:
-            offset = os.path.getsize(tuple_file) // 4
-            tf.seek(offset * 4)
-            tf.write(struct.pack('III', *tuple_data))
-        return page_num << 22 | offset
+            offset = os.path.getsize(tuple_file) // (4 * len(self.schema))
+            tf.seek(offset * (4 * len(self.schema)))
+            tf.write(struct.pack('I' * len(tuple_data), *tuple_data))
+        return page_num << 30 | offset
 
     def generate(self) -> None:
         """Generates N tuples of random data for the provided schema."""
-        os.makedirs("xrd/relations", exist_ok=True)
-        os.makedirs("xrd/tuples", exist_ok=True)
-        os.makedirs("xrd/fields", exist_ok=True)
+        os.makedirs("phase1/relations", exist_ok=True)
+        os.makedirs("phase1/tuples", exist_ok=True)
         for i in tqdm(range(self.N)):
-            page_num = i >> 22  # 10 bits for page number
+            page_num = i >> 30  # 10 bits for page number
 
             # generate the data for this tuple
             tuple_data = []
@@ -93,13 +67,12 @@ class Relation:
                     value = random.randint(18, 65)
                 elif field == 'salary':
                     value = random.randint(30000, 120000)
-                field_addr = self.save_field_value(field, value)
-                tuple_data.append(field_addr)
+                tuple_data.append(value)
 
             tid = self.save_tuple(i, tuple_data)
 
             # save the tid to the list of tids for the relation
-            relation_file = os.path.join("xrd/relations", f"{page_num}.dat")
+            relation_file = os.path.join("phase1/relations", f"{page_num}.dat")
             with open(relation_file, 'ab') as rf:
                 rf.write(struct.pack('I', tid))
 
