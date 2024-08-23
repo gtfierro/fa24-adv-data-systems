@@ -54,6 +54,11 @@ class Relation:
 
     def save_field_value(self, field_name: str, value: int) -> int:
         """Saves the field value in a separate file."""
+        # Discussion point:
+        # - if multiple rows have the same value, we can save the value only once
+        # - however, this means that we would need to clean up the field file after deleting a tuple
+        # - this would require us to scan the entire tuple file to see if the value is still in use
+        # - this is a trade-off between space and time
         field_file = os.path.join(self.field_dir, f"{field_name}.dat")
         with open(field_file, 'ab') as ff:
             offset = os.path.getsize(field_file) // 4
