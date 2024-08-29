@@ -51,8 +51,26 @@ def scan_all_index(disk_manager: DiskManager, relation: Relation) -> int:
     
     return count
 
+def scan_all_index_predicate(disk_manager: DiskManager, relation: Relation, predicate): # yield records that satisfy the predicate
+    index_path = os.path.join(disk_manager.heap_dir, f"{relation.name}.idx")
+    with open(index_path, 'rb') as index_file:
+        tree = disk_manager._deserialize_bplustree(index_file)
+        
+        def scan_records(node: BPlusTreeNode):
+            if node.is_leaf:
+                for key, record_id in node.keys:
+                    record = disk_manager.get_record(relation, record_id)
+                    if predicate(record):
+                        yield record
+            else:
+                for child in node.children:
+                    yield from scan_records(child)
+        
+        yield from scan_records(tree.root)
+
+
 # Define scan_all_index_predicate method
-def scan_all_index_predicate(disk_manager: DiskManager, relation: Relation) -> int:
+def scan_all_index_predicate_50(disk_manager: DiskManager, relation: Relation) -> int:
     count = 0
     column_index = next(i for i, (name, _) in enumerate(relation.schema) if name == "age")
     
@@ -72,6 +90,8 @@ def scan_all_index_predicate(disk_manager: DiskManager, relation: Relation) -> i
         count_records(tree.root)
     
     return count
+
+
 
 # Benchmark scan_all_heap
 start_time = time.time()
@@ -96,6 +116,6 @@ print(f"scan_all_index: {total_records_index} records, Time: {elapsed_time} seco
 
 # Benchmark scan_all_index_predicate
 start_time = time.time()
-total_records_index_predicate = scan_all_index_predicate(disk_manager, relation)
+total_records_index_predicate = scan_all_index_predicate_50(disk_manager, relation)
 elapsed_time = time.time() - start_time
-print(f"scan_all_index_predicate: {total_records_index_predicate} records, Time: {elapsed_time} seconds")
+print(f"scan_all_index_predicate_50: {total_records_index_predicate} records, Time: {elapsed_time} seconds")

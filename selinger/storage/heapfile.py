@@ -140,7 +140,7 @@ class DiskManager:
         with open(path, 'rb') as file:
             data = file.read()
         return Page(data)
-    
+
     def make_index(self, relation: Relation, column_name: str):
         column_index = next(i for i, (name, _) in enumerate(relation.schema) if name == column_name)
         index = BPlusTree()
@@ -150,10 +150,10 @@ class DiskManager:
             for record in self.scan(relation):
                 value = record.values[column_index]
                 index.insert(value, record.record_id)
-        
+
         with open(file_path, 'wb') as index_file:
             self._serialize_bplustree(index, index_file)
-                
+
     def _serialize_bplustree(self, tree: BPlusTree, file):
         def _recurse_serialize(node: BPlusTreeNode):
             file.write(b'\x01' if node.is_leaf else b'\x00')
@@ -164,9 +164,9 @@ class DiskManager:
             file.write(struct.pack('i', len(node.children)))
             for child in node.children:
                 _recurse_serialize(child)
-        
+
         _recurse_serialize(tree.root)
-    
+
     def _deserialize_bplustree(self, file) -> BPlusTree:
         def _recurse_deserialize() -> BPlusTreeNode:
             is_leaf = struct.unpack('b', file.read(1))[0] == 1
@@ -176,17 +176,17 @@ class DiskManager:
                 key = struct.unpack('i', file.read(4))[0]
                 record_id = struct.unpack('i', file.read(4))[0]
                 keys.append((key, record_id))
-                
+
             num_children = struct.unpack('i', file.read(4))[0]
             children = []
             for _ in range(num_children):
                 children.append(_recurse_deserialize())
-            
+
             node = BPlusTreeNode(is_leaf=is_leaf)
             node.keys = keys
             node.children = children
             return node
-        
+
         tree = BPlusTree()
         tree.root = _recurse_deserialize()
         return tree

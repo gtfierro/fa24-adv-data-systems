@@ -4,3 +4,6 @@ cat bptree.txt | llm -m $MODEL | tee bptree.py
 cat bptree.py heapfile.py index.txt | llm -m $MODEL | tee heapfile.py
 cat heapfile.py example.txt | llm -m $MODEL | tee example.py
 
+# this got split up into employee.py and join.py
+cat heapfile.py join.txt | llm -m $MODEL | tee join.py 
+

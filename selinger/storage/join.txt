@@ -1,0 +1,34 @@
+You are an expert database engineer. You have been asked to implement a simple database system.
+
+Using the classes above, create the following relations:
+
+Employee(name, salary)
+Department(dept_no, dept_name, manager_name)
+WorksIn(name, dept_no)
+
+We need to join Employee and Works_In on the name attribute and join Works_In and Department on dept_no. The join should return the name, salary, and dept_no of each employee who works in a department. The join should be implemented as a generator which yields each tuple.
+
+Here are the join predicates for each pair of relations:
+- Employee.name = WorksIn.name
+- Employee.dept_no = Department.dept_no
+- Department.dept_no = WorksIn.dept_no
+
+Write an implementation of nested loop join for each of these permutations of relations. The implementation should be a generator that yields each tuple that satisfies the join predicates.
+- Employee, WorksIn, Department
+- Employee, Department, WorksIn
+- WorksIn, Employee, Department
+- WorksIn, Department, Employee
+- Department, Employee, WorksIn
+- Department, WorksIn, Employee
+
+Benchmark the performance of each join by timing how long it takes to perform the join for each grouping.
+Print the time taken to perform the join for each grouping, and the grouping itself.
+
+Start with 
+
+```python
+from heapfile import Relation, DiskManager, Record
+```
+
+Only output Python code. Do not include markdown ticks.
+
