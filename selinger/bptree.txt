@@ -1,0 +1,7 @@
+Generate an in-memory b+ tree implementation with the following methods
+- scan() - returns an iterator that scans the index in order
+- search(value) - returns an iterator that scans the index and returns all records with the specified value
+- range_search(low, high) - returns an iterator that scans the index and returns all records with values between low and high
+- insert(value, record) - inserts a record with the specified value
+
+Only output Python code. Do not include markdown ticks.

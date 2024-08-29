@@ -1,0 +1,12 @@
+Add a make_index() method to the heapfile class which creates an index on the specified column. The index should be a btree index. The index should be stored in a separate file with the same name as the heapfile, but with a .idx extension. The index should be stored in the same directory as the heapfile. The index should be created on the specified column
+
+The index object should support the following methods:
+- scan() - returns an iterator that scans the index in order
+- search(value) - returns an iterator that scans the index and returns all records with the specified value
+- range_search(low, high) - returns an iterator that scans the index and returns all records with values between low and high
+
+Create the index by looping through the relation and adding each record to the index. The index should be stored in a file with the same name as the heapfile, but with a .idx extension.
+
+Import BPlusTree from bptree.py
+
+Only output Python code. Do not include markdown ticks.
