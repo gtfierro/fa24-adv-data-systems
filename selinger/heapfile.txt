@@ -1,0 +1,32 @@
+You are an expert database engineer. You have been asked to implement a simple database system. You have decided to start by implementing a heap file.
+
+Generate an implementation of a Relation in Python.
+A record is a struct with:
+- relation name (string)
+- record id (int)
+- tuple of values
+Possible values are: string, bool, int.
+All strings are char[32]. Booleans are 1 byte. Ints are 4 bytes.
+Calculate the length of a record in bytes. 
+
+
+A relation has a name and a schema. The schema is a list of attributes. Each attribute has a name and a type.
+The type can be string, bool, or int. Strings are char[32]. Booleans are 1 byte. Ints are 4 bytes.
+
+Create a disk manager class which implements the following methods:
+- insert_record(relation: Relation, values: Tuple) -> offset of record
+    - this finds the first page with space for the record and inserts it
+    - it puts the offset of the record in the page in the record id
+- scan(relation: Relation, predicate=None)
+    - this method should return a generator that yields records
+    - predicate is a function that takes a record and returns a boolean
+- list_files() -> List[file_name]
+- get_file(file_name) -> HeapFile
+
+The disk manager stores heap files in the 'heap' directory. Each heap file is a file with the name <relation_name>_<index>.heap.
+Each heap file can contain 100 records.
+The disk manager can only have 1 heap file open at a time. When a new heap file is opened, the old one is closed.
+
+A page is an in-memory representation of a heap file.
+
+Only output Python code. Do not include markdown ticks.

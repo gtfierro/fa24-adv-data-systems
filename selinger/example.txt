@@ -1,0 +1,13 @@
+using these classes, create a relation R(name, age) and insert 10000
+random records into it. Name should be a string of length 10 and age should be an integer between 0 and 100.
+
+Import all methods from heapfile.py
+
+Create a method scan_all_heap which counts all the records in the heap file.
+Benchmark the time it takes to scan all records in the heap file.
+
+Create a method scan_all_predicate which counts all the records in the heap file
+that satisfy the predicate age > 50.
+Benchmark the time it takes to scan all records in the heap file.
+
+Only output Python code. Do not include markdown ticks.
