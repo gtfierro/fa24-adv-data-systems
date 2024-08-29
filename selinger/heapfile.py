@@ -2,6 +2,7 @@ import os
 import struct
 import itertools
 from typing import List, Tuple, Generator, Callable
+from bptree import BPlusTree, BPlusTreeNode
 
 # Constants
 CHAR_SIZE = 32
@@ -9,11 +10,13 @@ BOOL_SIZE = 1
 INT_SIZE = 4
 MAX_RECORDS_PER_PAGE = 100
 
+
 class Record:
     def __init__(self, relation_name: str, record_id: int, values: Tuple):
         self.relation_name = relation_name
         self.record_id = record_id
         self.values = values
+
 
 class Relation:
     def __init__(self, name: str, schema: List[Tuple[str, str]]):
@@ -31,12 +34,14 @@ class Relation:
                 length += INT_SIZE
         return length
 
+
 class Page:
     def __init__(self, records: List[Record]):
         self.records = records
 
     def has_space(self, record_length: int) -> bool:
         return len(self.records) < MAX_RECORDS_PER_PAGE
+
 
 class DiskManager:
     def __init__(self):
@@ -135,3 +140,54 @@ class DiskManager:
         with open(path, 'rb') as file:
             data = file.read()
         return Page(data)
+    
+    def make_index(self, relation: Relation, column_name: str):
+        column_index = next(i for i, (name, _) in enumerate(relation.schema) if name == column_name)
+        index = BPlusTree()
+
+        file_path = os.path.join(self.heap_dir, f"{relation.name}.idx")
+        with open(file_path, 'wb') as index_file:
+            for record in self.scan(relation):
+                value = record.values[column_index]
+                index.insert(value, record.record_id)
+        
+        with open(file_path, 'wb') as index_file:
+            self._serialize_bplustree(index, index_file)
+                
+    def _serialize_bplustree(self, tree: BPlusTree, file):
+        def _recurse_serialize(node: BPlusTreeNode):
+            file.write(b'\x01' if node.is_leaf else b'\x00')
+            file.write(struct.pack('i', len(node.keys)))
+            for key, record_id in node.keys:
+                file.write(struct.pack('i', key))
+                file.write(struct.pack('i', record_id))
+            file.write(struct.pack('i', len(node.children)))
+            for child in node.children:
+                _recurse_serialize(child)
+        
+        _recurse_serialize(tree.root)
+    
+    def _deserialize_bplustree(self, file) -> BPlusTree:
+        def _recurse_deserialize() -> BPlusTreeNode:
+            is_leaf = struct.unpack('b', file.read(1))[0] == 1
+            num_keys = struct.unpack('i', file.read(4))[0]
+            keys = []
+            for _ in range(num_keys):
+                key = struct.unpack('i', file.read(4))[0]
+                record_id = struct.unpack('i', file.read(4))[0]
+                keys.append((key, record_id))
+                
+            num_children = struct.unpack('i', file.read(4))[0]
+            children = []
+            for _ in range(num_children):
+                children.append(_recurse_deserialize())
+            
+            node = BPlusTreeNode(is_leaf=is_leaf)
+            node.keys = keys
+            node.children = children
+            return node
+        
+        tree = BPlusTree()
+        tree.root = _recurse_deserialize()
+        return tree
+

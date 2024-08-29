@@ -1,4 +1,6 @@
 export MODEL=4o
 cat heapfile.txt | llm -m $MODEL | tee heapfile.py
+cat bptree.txt | llm -m $MODEL | tee bptree.py
+cat bptree.py heapfile.py index.txt | llm -m $MODEL | tee heapfile.py
 cat heapfile.py example.txt | llm -m $MODEL | tee example.py
 
