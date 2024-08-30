@@ -57,7 +57,7 @@ class BPlusTree:
 
     def search(self, value):
         iterator = self._scan_node(self.root, is_range_scan=True, value=value)
-        return [record for key, record in iterator if key == value]
+        return [(key, record) for key, record in iterator if key == value]
 
     def range_search(self, low, high):
         return self._scan_node(self.root, is_range_scan=True, low=low, high=high)

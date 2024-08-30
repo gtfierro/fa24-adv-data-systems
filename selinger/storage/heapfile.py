@@ -14,7 +14,7 @@ MAX_RECORDS_PER_PAGE = 100
 class Record:
     def __init__(self, relation_name: str, record_id: int, values: Tuple):
         self.relation_name = relation_name
-        self.record_id = record_id  # record_id now has a special format
+        self.record_id = record_id  # record_id has the first 12 bits as page number
         self.values = values
 
 
@@ -32,7 +32,7 @@ class Relation:
                 length += BOOL_SIZE
             elif typ == 'int':
                 length += INT_SIZE
-        return length
+        return length + INT_SIZE  # Extra space for record_id
 
 
 class Page:
@@ -62,8 +62,8 @@ class DiskManager:
 
     def get_record(self, relation: Relation, record_id: int) -> Record:
         # Extract page index and record offset from the record_id
-        page_index = record_id >> 22  # Get the first 10 bits for the page index
-        record_offset = record_id & ((1 << 22) - 1)  # Get the last 22 bits for the offset
+        page_index = record_id >> 20  # Get the first 12 bits for the page index
+        record_offset = record_id & ((1 << 20) - 1)  # Get the last 20 bits for the offset
 
         # Open the correct heap file for the relation and page index
         heap_file_path = self._get_heap_file_path(relation.name, page_index)
@@ -105,7 +105,7 @@ class DiskManager:
 
         # Calculate record offset in the current page
         record_offset = self.current_heap_file.tell() // record_length
-        record_id = (self.current_page_index << 22) | record_offset  # First 10 bits are page number, last 22 bits are offset
+        record_id = (self.current_page_index << 20) | record_offset  # First 12 bits are page number, last 20 bits are offset
 
         # Create the record
         record = Record(relation.name, record_id, values)
@@ -117,6 +117,8 @@ class DiskManager:
 
     def _serialize_record(self, relation: Relation, record: Record) -> bytes:
         serialized = bytearray()
+        # Serialize the record_id first
+        serialized.extend(struct.pack('i', record.record_id))
         for (attr_name, attr_type), value in zip(relation.schema, record.values):
             if attr_type == 'string':
                 serialized.extend(struct.pack(f'{CHAR_SIZE}s', value.encode('utf-8')))
@@ -141,6 +143,44 @@ class DiskManager:
                     if predicate is None or predicate(record):
                         yield record
 
+    def _deserialize_record(self, relation: Relation, data: bytes) -> Record:
+        offset = 0
+        # Deserialize the record_id first
+        record_id = struct.unpack_from('i', data, offset)[0]
+        offset += INT_SIZE
+        values = []
+        for attr_name, attr_type in relation.schema:
+            if attr_type == 'string':
+                value = struct.unpack_from(f'{CHAR_SIZE}s', data, offset)[0].decode('utf-8').strip('\x00')
+                offset += CHAR_SIZE
+            elif attr_type == 'bool':
+                value = struct.unpack_from('?', data, offset)[0]
+                offset += BOOL_SIZE
+            elif attr_type == 'int':
+                value = struct.unpack_from('i', data, offset)[0]
+                offset += INT_SIZE
+            values.append(value)
+
+        return Record(relation.name, record_id, tuple(values))
+
+    def list_files(self) -> List[str]:
+        if not os.path.exists(self.heap_dir):
+            os.makedirs(self.heap_dir)
+        return [f for f in os.listdir(self.heap_dir) if f.endswith('.heap')]
+
+    def make_index(self, relation: Relation, column_name: str):
+        column_index = next(i for i, (name, _) in enumerate(relation.schema) if name == column_name)
+        index = BPlusTree()
+
+        file_path = os.path.join(self.heap_dir, f"{relation.name}.idx")
+        with open(file_path, 'wb') as index_file:
+            for record in self.scan(relation):
+                value = record.values[column_index]
+                index.insert(value, record.record_id)
+
+        with open(file_path, 'wb') as index_file:
+            self._serialize_bplustree(index, index_file)
+
     def scan_index(self, relation: Relation, predicate: Callable[[Record], bool], scan_type: str, *args) -> Generator[Record, None, None]:
         index_file_path = os.path.join(self.heap_dir, f"{relation.name}.idx")
 
@@ -151,7 +191,6 @@ class DiskManager:
         with open(index_file_path, 'rb') as index_file:
             index_tree = self._deserialize_bplustree(index_file)
 
-        print(f"Scanning index for relation {relation.name} using {scan_type} with args {args}")
         if scan_type == "scan":
             records = index_tree.scan()
         elif scan_type == "search":
@@ -168,56 +207,10 @@ class DiskManager:
             raise ValueError(f"Unsupported scan type: {scan_type}")
 
         # Now retrieve the actual records corresponding to the found record_ids
-        for record_id in records:
+        for (val, record_id) in records:
             record = self.get_record(relation, record_id)
             if predicate is None or predicate(record):
                 yield record
-
-    def _deserialize_record(self, relation: Relation, data: bytes) -> Record:
-        offset = 0
-        values = []
-        for attr_name, attr_type in relation.schema:
-            if attr_type == 'string':
-                value = struct.unpack_from(f'{CHAR_SIZE}s', data, offset)[0].decode('utf-8').strip('\x00')
-                offset += CHAR_SIZE
-            elif attr_type == 'bool':
-                value = struct.unpack_from('?', data, offset)[0]
-                offset += 1
-            elif attr_type == 'int':
-                value = struct.unpack_from('i', data, offset)[0]
-                offset += 4
-            values.append(value)
-
-        # Decode the record_id back to page index and offset if needed
-        record_id = 0  # Placeholder (usually you'd fetch this from your record)
-        record = Record(relation.name, record_id, tuple(values))
-        return record
-
-    def list_files(self) -> List[str]:
-        if not os.path.exists(self.heap_dir):
-            os.makedirs(self.heap_dir)
-        return [f for f in os.listdir(self.heap_dir) if f.endswith('.heap')]
-
-    def get_file(self, file_name: str) -> Page:
-        relation_name = file_name.split('_')[0]
-        index = int(file_name.split('_')[1].split('.')[0])
-        path = self._get_heap_file_path(relation_name, index)
-        with open(path, 'rb') as file:
-            data = file.read()
-        return Page(data)
-
-    def make_index(self, relation: Relation, column_name: str):
-        column_index = next(i for i, (name, _) in enumerate(relation.schema) if name == column_name)
-        index = BPlusTree()
-
-        file_path = os.path.join(self.heap_dir, f"{relation.name}.idx")
-        with open(file_path, 'wb') as index_file:
-            for record in self.scan(relation):
-                value = record.values[column_index]
-                index.insert(value, record.record_id)
-
-        with open(file_path, 'wb') as index_file:
-            self._serialize_bplustree(index, index_file)
 
     def _serialize_bplustree(self, tree: BPlusTree, file):
         def _recurse_serialize(node: BPlusTreeNode):
