@@ -14,7 +14,7 @@ MAX_RECORDS_PER_PAGE = 100
 class Record:
     def __init__(self, relation_name: str, record_id: int, values: Tuple):
         self.relation_name = relation_name
-        self.record_id = record_id
+        self.record_id = record_id  # record_id now has a special format
         self.values = values
 
 
@@ -47,6 +47,7 @@ class DiskManager:
     def __init__(self):
         self.heap_dir = 'heap'
         self.current_heap_file = None
+        self.current_page_index = -1
 
     def _get_heap_file_path(self, relation_name: str, index: int) -> str:
         return os.path.join(self.heap_dir, f"{relation_name}_{index}.heap")
@@ -59,13 +60,39 @@ class DiskManager:
     def _create_new_page(self, relation: Relation) -> Page:
         return Page([])
 
+    def get_record(self, relation: Relation, record_id: int) -> Record:
+        # Extract page index and record offset from the record_id
+        page_index = record_id >> 22  # Get the first 10 bits for the page index
+        record_offset = record_id & ((1 << 22) - 1)  # Get the last 22 bits for the offset
+
+        # Open the correct heap file for the relation and page index
+        heap_file_path = self._get_heap_file_path(relation.name, page_index)
+
+        # Open the heap file in binary read mode
+        with open(heap_file_path, 'rb') as heap_file:
+            # Calculate the position to seek to based on the record offset
+            record_length = relation.record_length()
+            position = record_offset * record_length
+
+            # Move the file pointer to the desired position
+            heap_file.seek(position)
+
+            # Read the record data
+            record_data = heap_file.read(record_length)
+
+            if not record_data:
+                raise ValueError(f"Record at ID {record_id} not found.")
+
+            # Deserialize the record
+            return self._deserialize_record(relation, record_data)
+
     def insert_record(self, relation: Relation, values: Tuple) -> int:
         record_length = relation.record_length()
-        record_id = 0
 
-        # Find the first page with space
-        for i in itertools.count():
-            path = self._get_heap_file_path(relation.name, i)
+        # Find the first page with space or create a new page
+        while True:
+            self.current_page_index += 1
+            path = self._get_heap_file_path(relation.name, self.current_page_index)
             if not os.path.exists(path):
                 self._open_heap_file(path)
                 page = self._create_new_page(relation)
@@ -74,10 +101,13 @@ class DiskManager:
                 self._open_heap_file(path)
                 self.current_heap_file.seek(0, os.SEEK_END)
                 if self.current_heap_file.tell() < MAX_RECORDS_PER_PAGE * record_length:
-                    page = self._create_new_page(relation)
                     break
 
-        record_id = self.current_heap_file.tell() // record_length
+        # Calculate record offset in the current page
+        record_offset = self.current_heap_file.tell() // record_length
+        record_id = (self.current_page_index << 22) | record_offset  # First 10 bits are page number, last 22 bits are offset
+
+        # Create the record
         record = Record(relation.name, record_id, values)
 
         # Insert record
@@ -125,7 +155,10 @@ class DiskManager:
                 value = struct.unpack_from('i', data, offset)[0]
                 offset += 4
             values.append(value)
-        record = Record(relation.name, 0, tuple(values))
+
+        # Decode the record_id back to page index and offset if needed
+        record_id = 0  # Placeholder (usually you'd fetch this from your record)
+        record = Record(relation.name, record_id, tuple(values))
         return record
 
     def list_files(self) -> List[str]:
@@ -190,4 +223,3 @@ class DiskManager:
         tree = BPlusTree()
         tree.root = _recurse_deserialize()
         return tree
-
