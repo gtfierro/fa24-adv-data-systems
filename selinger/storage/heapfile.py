@@ -141,6 +141,38 @@ class DiskManager:
                     if predicate is None or predicate(record):
                         yield record
 
+    def scan_index(self, relation: Relation, predicate: Callable[[Record], bool], scan_type: str, *args) -> Generator[Record, None, None]:
+        index_file_path = os.path.join(self.heap_dir, f"{relation.name}.idx")
+
+        if not os.path.exists(index_file_path):
+            raise ValueError(f"Index file for relation {relation.name} not found.")
+
+        # Deserialize the BPlusTree from the index file
+        with open(index_file_path, 'rb') as index_file:
+            index_tree = self._deserialize_bplustree(index_file)
+
+        print(f"Scanning index for relation {relation.name} using {scan_type} with args {args}")
+        if scan_type == "scan":
+            records = index_tree.scan()
+        elif scan_type == "search":
+            if len(args) != 1:
+                raise ValueError("Search requires exactly one argument: the value to search for.")
+            value = args[0]
+            records = index_tree.search(value)
+        elif scan_type == "range_search":
+            if len(args) != 2:
+                raise ValueError("Range search requires exactly two arguments: low and high values.")
+            low, high = args
+            records = index_tree.range_search(low, high)
+        else:
+            raise ValueError(f"Unsupported scan type: {scan_type}")
+
+        # Now retrieve the actual records corresponding to the found record_ids
+        for record_id in records:
+            record = self.get_record(relation, record_id)
+            if predicate is None or predicate(record):
+                yield record
+
     def _deserialize_record(self, relation: Relation, data: bytes) -> Record:
         offset = 0
         values = []
